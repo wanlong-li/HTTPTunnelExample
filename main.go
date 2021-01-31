@@ -10,11 +10,6 @@ import (
 )
 
 func handleHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-
 	if r.Method == http.MethodConnect {
 		handleConnect(w, r)
 	} else {
@@ -29,6 +24,8 @@ func handleConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.WriteHeader(http.StatusOK)
+
 	hijacker, ok := w.(http.Hijacker)
 	if !ok {
 		http.Error(w, fmt.Sprintf("failed to get hijacker: %s", err), http.StatusInternalServerError)
@@ -42,10 +39,13 @@ func handleConnect(w http.ResponseWriter, r *http.Request) {
 
 	go func() {
 		io.Copy(localConn, remoteConn)
+		remoteConn.Close()
 	}()
 	go func() {
 		io.Copy(remoteConn, localConn)
+		localConn.Close()
 	}()
+
 }
 
 func main() {
@@ -53,9 +53,11 @@ func main() {
 	flag.StringVar(&listenAddr, "addr", ":8080", "listening address")
 	flag.Parse()
 
-	http.HandleFunc("/", handleHTTP)
-
-	if err := http.ListenAndServe(listenAddr, nil); err != nil {
+	s := &http.Server{
+		Addr:    listenAddr,
+		Handler: http.HandlerFunc(handleHTTP),
+	}
+	if err := s.ListenAndServe(); err != nil {
 		log.Fatal(err)
 	}
 }
